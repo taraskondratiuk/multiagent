@@ -51,7 +51,6 @@ public class DriverAgent extends Agent {
             MessageTemplate mt = MessageTemplate.MatchPerformative(ACLMessage.CFP);
             ACLMessage msg = myAgent.receive(mt);
             if (msg != null) {
-                System.out.println("driver " + msg.getContent());
                 String content = msg.getContent();
                 ACLMessage reply = msg.createReply();
 

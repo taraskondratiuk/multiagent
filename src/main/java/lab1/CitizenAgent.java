@@ -2,6 +2,7 @@ package lab1;
 
 import jade.core.AID;
 import jade.core.Agent;
+import jade.core.behaviours.Behaviour;
 import jade.core.behaviours.CyclicBehaviour;
 import jade.core.behaviours.TickerBehaviour;
 import jade.domain.DFService;
@@ -11,7 +12,6 @@ import jade.domain.FIPAException;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
 
-import javax.sound.midi.Soundbank;
 import java.util.*;
 
 public class CitizenAgent extends Agent {
@@ -25,6 +25,7 @@ public class CitizenAgent extends Agent {
     }
     String state;
     Random r = new Random();
+    int stateSwitches = 0;
     long minutesGuesting() {
         return r.nextInt(60 * 3) + 30;
     }
@@ -34,6 +35,7 @@ public class CitizenAgent extends Agent {
         } else {
             state = "hosting";
         }
+        stateSwitches++;
     }
 
     @Override
@@ -59,15 +61,23 @@ public class CitizenAgent extends Agent {
         catch (FIPAException fe) {
             fe.printStackTrace();
         }
-        addBehaviour(new CitizenHostBehaviour());
-        addBehaviour(new TickerBehaviour(this, 60 * 12 * 100) { //switching state each 12 hours
+
+        addBehaviour(new TickerBehaviour(this, 60 * 12) { //switching state each 12 hours
             @Override
             protected void onTick() {
-                switchState();
-                System.out.println("citizen " + id + " time waiging " + timeWaitingDriver);
+                if (stateSwitches < 3) {
+                    switchState();
+                    if (state.equals("guesting")) {
+                        addBehaviour(new CitizenGuestBehaviour());
+                    } else {
+                        addBehaviour(new CitizenHostBehaviour());
+                    }
+                } else {
+                    System.out.println("citizen " + id + " time waiting " + timeWaitingDriver);
+                    System.exit(0);
+                }
             }
         });
-        addBehaviour(new CitizenGuestBehaviour());
 
         System.out.println(this + " inited");
     }
@@ -77,7 +87,7 @@ public class CitizenAgent extends Agent {
         public void action() {
             MessageTemplate mt = MessageTemplate.MatchPerformative(ACLMessage.CFP);
             ACLMessage msg = myAgent.receive(mt);
-            if (msg != null) {
+            if (msg != null && msg.getContent() != null) {
                 String content = msg.getContent();
                 ACLMessage reply = msg.createReply();
 
@@ -96,10 +106,10 @@ public class CitizenAgent extends Agent {
                         reply.setPerformative(ACLMessage.REFUSE);
                         reply.setContent(Constants.HOSTER_NOT_AVAILABLE);
                     }
+                    myAgent.send(reply);
                 } else if (cmd.equals(Constants.HOSTER_CONFIRM)) {
                     busyUntil = Long.parseLong(content.replaceAll("[^\\d]", ""));
                 }
-                myAgent.send(reply);
             } else {
                 block();
             }
@@ -116,15 +126,14 @@ public class CitizenAgent extends Agent {
         private AID nearestDriver;
         private Location nearestLoc;
         private List<Location> freeDriversLocations;
-        private int state = 0;
+        private int stage = 0;
         private int repliesCount = 0;
         private long startWaiting;
         @Override
         public void action() {
-            if (!isBusy(System.currentTimeMillis())) {
-                switch (state) {
+            if (!isBusy(System.currentTimeMillis()) && (stage > 0 || state.equals("guesting"))) {
+                switch (stage) {
                     case 0:
-                        System.out.println("1");
                         startWaiting = 0;
                         DFAgentDescription template = new DFAgentDescription();
                         ServiceDescription sd = new ServiceDescription();
@@ -136,7 +145,6 @@ public class CitizenAgent extends Agent {
                             for (int i = 0; i < result.length; ++i) {
                                 drivers[i] = result[i].getName();
                             }
-                            System.out.println("found " + drivers.length + " drivers");
                         }
                         catch (FIPAException fe) {
                             fe.printStackTrace();
@@ -144,7 +152,7 @@ public class CitizenAgent extends Agent {
 
                         DFAgentDescription template2 = new DFAgentDescription();
                         ServiceDescription sd2 = new ServiceDescription();
-                        sd.setType("citizen");
+                        sd2.setType("citizen");
                         template2.addServices(sd2);
                         try {
                             DFAgentDescription[] result = DFService.search(myAgent, template2);
@@ -156,10 +164,9 @@ public class CitizenAgent extends Agent {
                         catch (FIPAException fe) {
                             fe.printStackTrace();
                         }
-                        state = 1;
+                        stage = 1;
                         break;
                     case 1:
-                        System.out.println("2");
                         // Send the cfp to all drivers
                         ACLMessage cfp2 = new ACLMessage(ACLMessage.CFP);
                         for (AID driver : drivers) {
@@ -172,12 +179,11 @@ public class CitizenAgent extends Agent {
                         // Prepare the template to get proposals
                         mt = MessageTemplate.and(MessageTemplate.MatchConversationId("driver-check"),
                                 MessageTemplate.MatchInReplyTo(cfp2.getReplyWith()));
-                        state = 2;
+                        stage = 2;
                         freeDrivers = new ArrayList<>();
                         freeDriversLocations = new ArrayList<>();
                         break;
                     case 2:
-                        System.out.println("3");
                         // Receive all proposals/refusals from drivers
                         ACLMessage reply2 = myAgent.receive(mt);
                         if (reply2 != null) {
@@ -187,16 +193,12 @@ public class CitizenAgent extends Agent {
                                 freeDriversLocations.add(Location.fromString(reply2.getContent()).get(0));
                             }
                             repliesCount++;
-                            System.out.println("replies " + repliesCount);
-                            System.out.println("drivers " + drivers.length);
                             if (repliesCount >= drivers.length * 2 / 3) {
                                 // We received all replies
                                 int nearestDriverIdx = 0;
                                 double nearestDist = Double.MAX_VALUE;
                                 nearestLoc = null;
-                                System.out.println("loc3");
                                 for (int i = 0; i < freeDriversLocations.size(); i++) {
-                                    System.out.println("loc");
                                     if (nearestLoc == null || Location.distanceBetweenLocations(location, freeDriversLocations.get(i)) < nearestDist) {
                                         nearestDist = Location.distanceBetweenLocations(location, freeDriversLocations.get(i));
                                         nearestLoc = freeDriversLocations.get(i);
@@ -209,7 +211,7 @@ public class CitizenAgent extends Agent {
                                 } else {
                                     nearestDriver = freeDrivers.get(nearestDriverIdx);
                                     repliesCount = 0;
-                                    state = 3;
+                                    stage = 3;
                                 }
                             }
                         }
@@ -218,7 +220,6 @@ public class CitizenAgent extends Agent {
                         }
                         break;
                     case 3:
-                        System.out.println("4");
                         // Send the cfp to all citizens
                         ACLMessage cfp = new ACLMessage(ACLMessage.CFP);
                         for (AID citizen : citizens) {
@@ -231,18 +232,16 @@ public class CitizenAgent extends Agent {
                         // Prepare the template to get proposals
                         mt = MessageTemplate.and(MessageTemplate.MatchConversationId("host-check"),
                                 MessageTemplate.MatchInReplyTo(cfp.getReplyWith()));
-                        state = 4;
+                        stage = 4;
                         hosters = new ArrayList<>();
                         hosterLocations = new ArrayList<>();
                         break;
                     case 4:
-                        System.out.println("5");
                         // Receive all proposals/refusals from hosts
                         ACLMessage reply = myAgent.receive(mt);
-                        if (reply != null) {
+                        if (reply != null && reply.getContent() != null) {
                             // Reply received
-                            System.out.println("content " + reply.getContent());
-                            if (reply.getContent().equals(Constants.HOSTER_AVAILABLE)) {
+                            if (reply.getContent().contains(Constants.HOSTER_AVAILABLE)) {
                                 hosterLocations.add(Location.fromString(reply.getContent()).get(0));
                                 hosters.add(reply.getSender());
                             }
@@ -269,12 +268,12 @@ public class CitizenAgent extends Agent {
 
                                 timeWaitingDriver += Location.minutesBetweenLocations(nearestLoc, home);
                                 if (startWaiting > 0) {
-                                    timeWaitingDriver += System.currentTimeMillis() - startWaiting;
+                                    timeWaitingDriver += (System.currentTimeMillis() - startWaiting);
                                     startWaiting = 0;
                                 }
                                 location = l;
                                 repliesCount = 0;
-                                state = 5;
+                                stage = 5;
                             }
                         }
                         else {
@@ -282,7 +281,6 @@ public class CitizenAgent extends Agent {
                         }
                         break;
                     case 5:
-                        System.out.println("6");
                         if (!isBusy(System.currentTimeMillis())) {
                             // Send the cfp to all drivers
                             ACLMessage cfp3 = new ACLMessage(ACLMessage.CFP);
@@ -296,7 +294,7 @@ public class CitizenAgent extends Agent {
                             // Prepare the template to get proposals
                             mt = MessageTemplate.and(MessageTemplate.MatchConversationId("driver-check"),
                                     MessageTemplate.MatchInReplyTo(cfp3.getReplyWith()));
-                            state = 6;
+                            stage = 6;
                             freeDrivers = new ArrayList<>();
                             freeDriversLocations = new ArrayList<>();
                         } else {
@@ -304,16 +302,16 @@ public class CitizenAgent extends Agent {
                         }
                         break;
                     case 6:
-                        System.out.println("7");
                         // Receive all proposals/refusals from drivers
                         ACLMessage reply3 = myAgent.receive(mt);
                         if (reply3 != null) {
                             // Reply received
-                            if (reply3.getContent().equals(Constants.DRIVER_AVAILABLE)) {
+                            if (reply3.getContent().contains(Constants.DRIVER_AVAILABLE)) {
                                 freeDrivers.add(reply3.getSender());
                                 freeDriversLocations.add(Location.fromString(reply3.getContent()).get(0));
                             }
                             repliesCount++;
+
                             if (repliesCount >= drivers.length) {
                                 // We received all replies
                                 int nearestDriverIdx = 0;
@@ -332,7 +330,7 @@ public class CitizenAgent extends Agent {
                                 } else {
                                     nearestDriver = freeDrivers.get(nearestDriverIdx);
                                     repliesCount = 0;
-                                    state = 7;
+                                    stage = 7;
                                 }
                             }
                         }
@@ -341,7 +339,6 @@ public class CitizenAgent extends Agent {
                         }
                         break;
                     case 7:
-                        System.out.println("8");
                         ACLMessage confirm = new ACLMessage(ACLMessage.ACCEPT_PROPOSAL);
                         confirm.addReceiver(nearestDriver);
                         confirm.setContent(Constants.DRIVER_CONFIRM + " " + home);
@@ -356,14 +353,12 @@ public class CitizenAgent extends Agent {
                         busyUntil = System.currentTimeMillis() + Location.minutesBetweenLocations(location, home);
                         location = home;
                         repliesCount = 0;
-                        timeWaitingDriver = 0;
-                        state = 0;
+                        stage = 0;
                         break;
                 }
             } else {
                 block();
             }
-
         }
     }
 

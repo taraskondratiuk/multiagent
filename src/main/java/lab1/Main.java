@@ -26,18 +26,21 @@ public class Main {
 
         int X = 7900;
         int Y = 8100;
-        int N = 115;
-        for (int i = 0; i < 1; i++) {
+        int NUM_CITIZENS = 8;
+        int NUM_DRIVERS = 3;
+        System.out.println("X: " + X);
+        System.out.println("Y: " + Y);
+        System.out.println("NUM_CITIZENS: " + NUM_CITIZENS);
+        System.out.println("NUM_DRIVERS: " + NUM_DRIVERS);
+        for (int i = 0; i < NUM_DRIVERS; i++) {
             AgentController agent = mainContainer.createNewAgent("driver" + i,
                     "lab1.DriverAgent", new Object[] {X, Y, i});
             agent.start();
         }
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < NUM_CITIZENS; i++) {
             AgentController agent = mainContainer.createNewAgent("citizen" + i,
                     "lab1.CitizenAgent", new Object[] {X, Y, i});
             agent.start();
         }
-//        Thread.sleep(1500L);
-//        System.exit(0);
     }
 }

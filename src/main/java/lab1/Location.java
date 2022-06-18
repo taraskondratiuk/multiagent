@@ -17,7 +17,7 @@ public class Location {
         return new Location(r.nextInt(xBound), r.nextInt(yBound));
     }
     static double distanceBetweenLocations(Location loc1, Location loc2) {
-        return Math.sqrt(Math.pow(loc1.x - loc2.x, 2) + Math.pow(loc1.y - loc2.y, 2));
+        return Math.sqrt(Math.pow(loc1.x - loc2.x, 2) + Math.pow(loc1.y - loc2.y, 2)) / 1000;
     }
     static int minutesBetweenLocations(Location loc1, Location loc2) {
         double dist = distanceBetweenLocations(loc1, loc2);
@@ -48,7 +48,6 @@ public class Location {
     static public List<Location> fromString(String s) {
         List<String> coords = Arrays.stream(s.replaceAll("[^\\d ]", "").split(" "))
                 .filter(v -> !v.equals("")).collect(Collectors.toList());
-        coords.stream().forEach(c -> System.out.println(c + " coord"));
         List<Location> locs = new ArrayList<>();
         for (int i = 0; i < coords.size(); i+=2) {
             locs.add(new Location(Integer.parseInt(coords.get(i)), Integer.parseInt(coords.get(i + 1))));
